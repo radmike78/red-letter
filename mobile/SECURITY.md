@@ -224,6 +224,33 @@ marketing.
   limits the damage, but a malicious package could still corrupt data. Keep the
   dependency count low and run `npm audit` before release.
 
+### Known advisories, and why they stand
+
+`npm audit --omit=dev` reports **12 moderate** findings. They are not ignored;
+they are one package, reached at build time only.
+
+**Fixed:** `decode-uri-component`. `package.json` pins it to `^0.5.0` via an
+`overrides` entry. This one was worth fixing because it is genuinely reachable
+at runtime — `expo-router` parses incoming deep links through `query-string`,
+the app registers the `redletter://` scheme, and the advisory is a
+denial-of-service on malformed percent-encoding. Any app or web page could have
+sent such a link. Note that `0.4.x` is **also** vulnerable (the advisory range
+is `<=0.4.2`); only `0.5.0` is clean.
+
+**Not fixed:** `uuid@7.0.3`, reached as
+`expo-sharing → @expo/config-plugins → xcode → uuid`. `xcode` runs during
+`expo prebuild` to edit the Xcode project; **it is not part of the app bundle
+and never executes on a user's device.** The advisory is a missing buffer
+bounds check in `v3/v5/v6` when a `buf` argument is supplied, which `xcode`
+does not do. The only fix `npm` offers is a major downgrade of
+`expo-splash-screen`, which would be a real regression to remove a
+non-runtime finding. Overriding `uuid` to v11 was considered and rejected: the
+v7 → v11 API change would likely break `xcode`, trading a working build for
+nothing.
+
+Re-check this on every Expo upgrade — the reasoning above depends on `uuid`
+staying build-time only.
+
 ## Before shipping
 
 - [ ] Confirm `INTERNET` is absent from the **release** manifest
