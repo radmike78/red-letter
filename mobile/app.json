@@ -13,14 +13,13 @@
       "resizeMode": "contain",
       "backgroundColor": "#FBFAF8"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.redletter.app",
       "requireFullScreen": false,
-      "config": {
-        "usesNonExemptEncryption": false
-      },
       "infoPlist": {
         "NSCalendarsFullAccessUsageDescription": "Red Letter can copy your marked days into your device calendar. Access is only requested when you turn sync on, and only the days you have marked are written.",
         "NSFaceIDUsageDescription": "Unlock Red Letter with Face ID instead of your device passcode.",
@@ -29,7 +28,7 @@
           "NSAllowsArbitraryLoadsInWebContent": false,
           "NSAllowsLocalNetworking": false
         },
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": true
       },
       "privacyManifests": {
         "NSPrivacyTracking": false,
@@ -38,14 +37,19 @@
         "NSPrivacyAccessedAPITypes": [
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
-            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1"
+            ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
           }
         ]
-      }
+      },
+      "buildNumber": "1"
     },
     "android": {
       "package": "com.redletter.app",
@@ -72,7 +76,8 @@
         "android.permission.CAMERA",
         "android.permission.READ_CONTACTS",
         "android.permission.SYSTEM_ALERT_WINDOW"
-      ]
+      ],
+      "versionCode": 1
     },
     "plugins": [
       "expo-router",

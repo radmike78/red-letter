@@ -1,0 +1,152 @@
+# Getting Red Letter into both stores
+
+Work top to bottom. The two items that cost *time* rather than effort are
+marked ⏳ — start those first, because everything else can be done in an
+afternoon while they run.
+
+## ⏳ 1. Google's closed-testing requirement
+
+**This is a calendar problem, not a code problem.** If it applies to you, you
+cannot ship to production for at least two weeks, so start it before anything
+else.
+
+**Does it apply to you?** Open Play Console → Settings → Developer account →
+Account details.
+
+| Your account | Applies? |
+|---|---|
+| Personal, created **after 13 Nov 2023** | **Yes** — 12 testers, 14 continuous days |
+| Personal, created before that date | No |
+| Organization (has a D-U-N-S number) | No |
+
+The rules, if it applies:
+
+- **12 testers minimum**, opted in **continuously for 14 days**. Was 20; Google
+  reduced it to 12 in December 2024. The 14 days did not change.
+- A tester who opts out and back in **resets** — the 14 days must be
+  consecutive.
+- Recruit ~16 to absorb dropouts. They need Google accounts, and they must
+  actually opt in via the link.
+- After 14 days you *apply* for production access and answer questions about
+  the app and your testing.
+
+Setting up an organization account instead skips this entirely, but needs a
+D-U-N-S number (free from Dun & Bradstreet, allow a couple of weeks).
+
+## ⏳ 2. Apple Developer Program
+
+$99/year, approval usually 24–48h but can take longer if they ask for ID.
+Nothing else Apple-side can start until it clears.
+
+Google Play is $25 once and approval is quick.
+
+## 3. Export compliance — read this, it is a legal declaration
+
+`ITSAppUsesNonExemptEncryption` is now **`true`** in `app.json`, and
+`ios.config.usesNonExemptEncryption` (which said the opposite) has been
+removed.
+
+That is the honest answer. Apple's rule is that encryption **built into the
+operating system** is exempt, while **proprietary encryption is not**, and the
+check covers third-party libraries the app links against. Red Letter bundles
+`@noble/ciphers` and performs XChaCha20-Poly1305 itself, so the OS-crypto
+exemption does not apply.
+
+**What this means in practice:** App Store Connect will ask export-compliance
+questions on your first submission. A consumer app doing standard
+crypto is normally self-classified **ECCN 5D992.c** (mass market). You will
+likely also owe an **annual self-classification report** to BIS, due **1
+February** for the prior calendar year — it is free and sent by email.
+
+⚠️ **Verify the reporting obligation yourself.** BIS changed the reporting
+rules for mass-market items recently and the primary sources could not be
+reached from the environment this was written in. Confirm against
+[BIS Supplement No. 8 to Part 742](https://www.bis.gov/ear/title-15/subtitle-b/chapter-vii/subchapter-c/part-742/supplement-no-8-part-742-self)
+or ask an export-compliance advisor. Do not take this file as legal advice.
+
+**The way to make the question go away permanently:** replace the JavaScript
+cipher with platform crypto — CryptoKit on iOS, Keystore/Tink on Android — via
+a small native module. Then the OS-crypto exemption genuinely applies, the
+answer becomes `NO`, and there is no annual anything. It costs roughly a day
+of native work, and it is the better long-term answer if you expect this app
+to be around for years.
+
+## 4. Assets you still have to make
+
+- [ ] **App icon, 1024×1024** — `assets/icon.png` is **still Expo's
+      placeholder**. This is the one blocking asset.
+- [ ] Android adaptive icon: foreground + monochrome (currently placeholders)
+- [ ] **Screenshots** — iPhone 6.9" and 6.5"; Android phone, at least 2
+- [ ] **Play feature graphic**, 1024×500
+- [ ] Short description (80 chars) and full description (4000)
+
+A note on screenshots specific to this product: the year view is the pitch.
+Lead with the screen that is mostly empty — that is the whole argument, and it
+is what separates the listing from forty colourful planner pages.
+
+## 5. Privacy policy
+
+Required by **both** stores even though the app collects nothing. Host it
+anywhere public; GitHub Pages is free. It needs to say, truthfully:
+
+- No data is collected, transmitted, or shared. The app has no server and no
+  account.
+- Calendar data stays on the device, encrypted at rest.
+- Calendar permission, if granted, is used only to write days you export.
+- Notifications are scheduled locally.
+- Contact email for questions.
+
+## 6. Store compliance forms
+
+Both are trivial here because the app genuinely collects nothing.
+
+- [ ] **Apple privacy labels** → "Data Not Collected" throughout
+- [ ] **Google Data safety** → no collection, no sharing; do declare that data
+      is encrypted at rest
+- [ ] **Content rating** → 4+ / Everyone
+- [ ] Account deletion — N/A, there are no accounts
+
+## 7. The review risk worth preparing for
+
+Apple **Guideline 4.2, Minimum Functionality**. Red Letter is deliberately
+spare, and reviewers reject apps that read as a web page in a wrapper or as too
+thin to justify being an app.
+
+Put this in the App Review notes field, explicitly:
+
+> Red Letter uses local notifications that fire while the app is closed,
+> writes to the device calendar with write-only permission, supports biometric
+> app lock, and stores all data encrypted on-device with no network access.
+> The app makes no network requests at all.
+
+Naming the native capabilities directly is the answer to "why is this an app."
+
+## 8. Build and submit
+
+```sh
+npm install -g eas-cli
+eas login
+eas build --platform all --profile production
+```
+
+Then fill in the two placeholders in `eas.json` under `submit.production.ios`
+(`ascAppId`, `appleTeamId`) and:
+
+```sh
+eas submit --platform ios
+eas submit --platform android
+```
+
+`eas.json` sets `autoIncrement` on the production profile, so build numbers go
+up on their own. `app.json` starts at `buildNumber` 1 / `versionCode` 1.
+
+You do **not** need a Mac — EAS builds iOS on Apple hardware in the cloud.
+
+## 9. Before you hit submit
+
+- [ ] Confirm `INTERNET` is absent from the **release** manifest, not just debug
+- [ ] `npm audit`
+- [ ] Restore a deliberately corrupted backup and check it fails safely
+- [ ] Test on a device with no biometrics enrolled
+- [ ] Test notification delivery with the app force-quit
+- [ ] Confirm the encrypted file is unreadable in a filesystem dump
