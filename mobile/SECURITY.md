@@ -130,6 +130,56 @@ their first occurrence and the count is reported.
 hostile files — injection payloads, prototype pollution, malformed structure,
 oversized fields, unclosed blocks.
 
+## Links in entries
+
+A calendar imports `.ics` files from strangers, and the classic attack is a
+plausible event carrying a phishing link. `src/core/urls.ts` finds links in
+entry text and judges them **entirely offline**.
+
+Nothing opens automatically, nothing is fetched, and nothing is previewed. A
+link is inert until the user has seen the real destination and confirmed. Red
+Letter re-analyses at the moment of the tap rather than trusting the verdict
+computed at render time.
+
+**Refused outright** (never handed to the OS): `javascript:`, `data:`,
+`file:`, `content:`, `intent:`, `blob:`, `vbscript:`, `jar:`, and anything
+outside the allowlist of `http`, `https`, `mailto`, `tel`. An allowlist rather
+than a blocklist, because every installed app can register a scheme handler, so
+naming what is permitted is the only version that stays correct. These are
+matched by name in the extractor too, since they carry no `//` and would
+otherwise never be found in order to be refused.
+
+**Flagged as deceptive:** credentials used to disguise the host
+(`https://apple.com@evil.example` — the browser goes to `evil.example`),
+punycode, hosts mixing Latin with Cyrillic or Greek, and raw IP addresses.
+**Noted more mildly:** shorteners, plain `http`, unusual ports, deep
+subdomains.
+
+### Why there is no virus or malware scan
+
+Checking links against Google Safe Browsing or VirusTotal was considered and
+rejected. It would require:
+
+1. **Network access**, which this app deliberately does not have.
+2. **Sending the user's private calendar URLs to a third party** — the booking,
+   the patient portal, the interview invitation. That is precisely the
+   exfiltration the rest of this design makes impossible.
+3. **An API key**, which cannot live safely in a client app, so it would need a
+   backend — a server, and the breach liability avoided everywhere else.
+
+It would also be largely redundant: Safari and Chrome run Safe Browsing on
+every URL they open, so the reputation check already happens at the layer that
+can do it without Red Letter seeing anything.
+
+What is implemented instead is the part a reputation list is worst at —
+spotting a link that is *structurally* pretending to be somewhere it is not —
+which works on a domain registered an hour ago that no blocklist has yet seen.
+
+**The limit, stated plainly:** this catches deception, not reputation. A
+link to a genuinely malicious site at an honest-looking address will be
+reported as `ok`. The browser's Safe Browsing is what catches that, and it
+still runs.
+
 ## Permissions
 
 Every permission is requested at the point of use, never at launch. A prompt

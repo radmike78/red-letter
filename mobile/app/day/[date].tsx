@@ -24,6 +24,7 @@ import {
 } from '../../src/core/dates';
 import { LIMITS, type Entry } from '../../src/core/model';
 import { sortDayEntries } from '../../src/core/queries';
+import { EntryLinks } from '../../src/features/EntryLinks';
 import { useStore } from '../../src/storage/repository';
 import { space, type, useTheme } from '../../src/ui/theme';
 
@@ -150,33 +151,37 @@ export default function DayScreen(): React.JSX.Element {
           ) : (
             entries.map((entry) => (
               <View key={entry.id} style={[styles.entryRow, { borderBottomColor: theme.rule }]}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit ${entry.title}`}
-                  style={styles.entryMain}
-                  onPress={() => beginEdit(entry)}
-                >
-                  <Text style={[type.body, { color: theme.ink }]}>{entry.title}</Text>
-                  {entry.time ? (
-                    <Text style={[type.small, styles.entryTime, { color: theme.red }]}>
-                      {formatTime(entry.time)}
-                    </Text>
-                  ) : null}
-                  {entry.note ? (
-                    <Text style={[type.small, styles.entryNote, { color: theme.inkMuted }]}>
-                      {entry.note}
-                    </Text>
-                  ) : null}
-                </Pressable>
+                <View style={styles.entryTop}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${entry.title}`}
+                    style={styles.entryMain}
+                    onPress={() => beginEdit(entry)}
+                  >
+                    <Text style={[type.body, { color: theme.ink }]}>{entry.title}</Text>
+                    {entry.time ? (
+                      <Text style={[type.small, styles.entryTime, { color: theme.red }]}>
+                        {formatTime(entry.time)}
+                      </Text>
+                    ) : null}
+                    {entry.note ? (
+                      <Text style={[type.small, styles.entryNote, { color: theme.inkMuted }]}>
+                        {entry.note}
+                      </Text>
+                    ) : null}
+                  </Pressable>
 
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${entry.title}`}
-                  hitSlop={space.sm}
-                  onPress={() => confirmRemove(entry)}
-                >
-                  <Text style={[type.body, { color: theme.inkFaint }]}>×</Text>
-                </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${entry.title}`}
+                    hitSlop={space.sm}
+                    onPress={() => confirmRemove(entry)}
+                  >
+                    <Text style={[type.body, { color: theme.inkFaint }]}>×</Text>
+                  </Pressable>
+                </View>
+
+                <EntryLinks title={entry.title} note={entry.note} />
               </View>
             ))
           )}
@@ -266,12 +271,10 @@ const styles = StyleSheet.create({
   },
   empty: { paddingVertical: space.xl, textAlign: 'center' },
   entryRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     paddingVertical: space.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: space.md,
   },
+  entryTop: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
   entryMain: { flex: 1, gap: 2 },
   entryTime: { marginTop: 2 },
   entryNote: { marginTop: space.xs },
