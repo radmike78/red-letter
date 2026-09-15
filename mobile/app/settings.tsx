@@ -109,7 +109,41 @@ export default function SettingsScreen(): React.JSX.Element {
         return;
       }
 
-      const { report } = outcome;
+      const { report, split } = outcome;
+
+      // A backup from the HTML version distinguishes Red Letter days from days
+      // that merely have something on them. Importing everything would turn
+      // every errand into a red day, so the choice is put to the user in the
+      // same terms their web version uses.
+      if (split) {
+        Alert.alert(
+          'Which days?',
+          `This backup has ${split.redLetterDays} Red Letter ${
+            split.redLetterDays === 1 ? 'day' : 'days'
+          } and ${split.ordinaryDays} other ${
+            split.ordinaryDays === 1 ? 'day' : 'days'
+          } with something on them. Red Letter opens on the year, so bringing everything across will fill it in.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Red Letter days only',
+              onPress: () => {
+                replaceAll(split.redLetter);
+                void syncReminders(split.redLetter);
+              },
+            },
+            {
+              text: 'Everything',
+              onPress: () => {
+                replaceAll(outcome.data);
+                void syncReminders(outcome.data);
+              },
+            },
+          ],
+        );
+        return;
+      }
+
       Alert.alert(
         'Replace everything?',
         `This backup has ${report.entriesKept} ${

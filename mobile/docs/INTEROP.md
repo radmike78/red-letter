@@ -70,11 +70,60 @@ Settings → *Export a backup* writes:
 }
 ```
 
+### Verified against the real HTML version
+
+The web file's format has been read directly, and two things were wrong before
+that:
+
+1. **`flags` was being dropped.** The web version writes
+   `{ items, flags, seen }`. `items` holds *everything* on a day; **`flags`
+   records which days are actually Red Letter days.** The importer read `items`
+   and ignored `flags` — which is to say it discarded the single piece of
+   information the whole product is about.
+2. **This app's backup could not be restored in the web version.** Its
+   `restore()` begins `typeof o.items !== "object"` → reject. Our backup wrote
+   `entries`, so the web version refused the file outright.
+
+Both are fixed. The backup now carries the calendar twice — `entries`/`waiting`
+in this app's shape, `items`/`flags` in the web version's — so it opens in
+either. The file is roughly twice the size, which for a calendar of
+exceptional days is still a few kilobytes.
+
+### The one real difference between the two products
+
+The web version distinguishes **a day with something on it** from **a Red
+Letter day**. This app does not: an entry exists, so the day is marked.
+
+So importing a web backup wholesale would promote every dentist appointment to
+a red day and fill in the year view — the one thing the product exists to keep
+clear. Restore therefore asks, in the web version's own words:
+
+> This backup has 12 Red Letter days and 40 other days with something on them.
+> — [Red Letter days only] [Everything]
+
+### What the web version drops when reading our file
+
+Its cleaner keeps only `title`, `time`, `mark` and `imported`.
+
+| Field | Survives app → HTML? |
+|---|---|
+| Title, time | Yes |
+| **Note** | **No** — it has no notes field |
+| **Waiting On** | **No** — it has no such list |
+
+`entries` in the same file still holds the full record, so a round trip
+app → HTML → app is lossless as long as the file is not re-saved from the web
+version in between. Re-saving there drops what it does not understand.
+
+Its per-day cap is 200 entries against this app's 50, so a day with more than
+50 things imports truncated. In a product about empty days this is unlikely to
+matter.
+
 ### Importing a backup written by the HTML version
 
-**This should just work, even though the two codebases were never coordinated.**
-Restore does not require the file to use this app's exact field names. It
-reshapes what it finds, accepting:
+**This works even though the two codebases were never coordinated.** Restore
+does not require the file to use this app's exact field names. It reshapes what
+it finds, accepting:
 
 - `{ entries: { "2026-03-15": [...] } }` — this app's own shape
 - `{ "2026-03-15": [...] }` — date keys at the top level, no wrapper
@@ -88,6 +137,8 @@ reshapes what it finds, accepting:
 - Times as `14:00`, `2pm`, `2:00 PM`, `9:05` or `0905`
 - Dates as `2026-03-15`, `2026/3/15`, or with a time glued on
 - Waiting items under `waiting`, `waitingOn`, `blocked` or `pending`
+- Red Letter designation under `flags`, `flagged`, `redLetter` or `starred`,
+  or a per-item `mark`/`marked`/`star`
 
 **Being permissive about shape is not being permissive about content.** The
 normaliser only *moves* values. Everything still goes through `rebuildData`

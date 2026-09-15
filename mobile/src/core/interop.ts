@@ -27,6 +27,22 @@ export interface NormalizeResult {
   shape: BackupShape;
   /** Always in this app's shape, ready for `rebuildData`. */
   value: { entries: Record<string, unknown>; waiting: unknown[] };
+  /**
+   * Days the source file considered Red Letter days.
+   *
+   * The web version separates two ideas this app merges: `items` holds
+   * everything on a day, and `flags` records which days are actually Red
+   * Letter days. A day can carry a dentist appointment without being flagged.
+   *
+   * This app has no such split — an entry exists, so the day is marked — so
+   * importing every item wholesale would turn every mundane errand into a red
+   * day and bury the year view, which is the one thing the product exists to
+   * keep clear. The distinction is carried here so the caller can ask the user
+   * which they meant.
+   */
+  redLetterDays: string[];
+  /** Days that had something on them but were not flagged. */
+  ordinaryDays: string[];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -34,6 +50,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
+
+/**
+ * Where the "this is a Red Letter day" designation lives. `flags` is the web
+ * version's own name for it, and is authoritative there.
+ */
+const FLAG_CONTAINER_KEYS = ['flags', 'flagged', 'redLetter', 'red_letter', 'starred'];
+
+/** Per-item field meaning "this is the reason the day is marked". */
+const MARK_KEYS = ['mark', 'marked', 'isRedLetter', 'star'];
 
 /** Field names a day's list of things might plausibly live under. */
 const ENTRY_CONTAINER_KEYS = ['entries', 'days', 'items', 'events', 'marked', 'calendar'];
@@ -206,6 +231,78 @@ function findWaiting(source: Record<string, unknown>): unknown[] {
 }
 
 /**
+ * Reads the days the source file marked as Red Letter days.
+ *
+ * Two sources, unioned. `flags` is a map of date key to truthy, which is what
+ * the web version writes and is authoritative there. A per-item `mark` is the
+ * other half of the same idea — the web version sets the flag when you mark an
+ * item — so it is honoured too, in case a file carries one without the other.
+ */
+function collectFlaggedDays(source: Record<string, unknown>): Set<string> {
+  const flagged = new Set<string>();
+
+  for (const key of FLAG_CONTAINER_KEYS) {
+    const container = source[key];
+    if (!isPlainObject(container)) continue;
+
+    for (const [rawDate, value] of Object.entries(container)) {
+      if (rawDate === '__proto__' || rawDate === 'constructor' || rawDate === 'prototype') continue;
+      if (value !== true && value !== 1 && value !== 'true') continue;
+
+      const date = normalizeDate(rawDate);
+      if (isValidDateKey(date)) flagged.add(date);
+    }
+  }
+
+  // A day whose items include one marked as the reason is a flagged day.
+  for (const key of ENTRY_CONTAINER_KEYS) {
+    const container = source[key];
+    if (!isPlainObject(container)) continue;
+
+    for (const [rawDate, list] of Object.entries(container)) {
+      if (!Array.isArray(list)) continue;
+
+      const date = normalizeDate(rawDate);
+      if (!isValidDateKey(date)) continue;
+
+      for (const item of list) {
+        if (!isPlainObject(item)) continue;
+        if (MARK_KEYS.some((markKey) => item[markKey] === true)) {
+          flagged.add(date);
+          break;
+        }
+      }
+    }
+  }
+
+  return flagged;
+}
+
+/** Splits the days found into flagged and not, given what the file said. */
+function withFlags(
+  shape: BackupShape,
+  entries: Record<string, unknown>,
+  waiting: unknown[],
+  flagged: Set<string>,
+): NormalizeResult {
+  const present = Object.keys(entries);
+
+  // A file with no flag information at all is treated as all Red Letter days:
+  // that is what this app's own backups mean, and what an .ics-derived file
+  // means too. Reporting every day as "ordinary" would be worse than useless.
+  if (flagged.size === 0) {
+    return { shape, value: { entries, waiting }, redLetterDays: present, ordinaryDays: [] };
+  }
+
+  return {
+    shape,
+    value: { entries, waiting },
+    redLetterDays: present.filter((date) => flagged.has(date)),
+    ordinaryDays: present.filter((date) => !flagged.has(date)),
+  };
+}
+
+/**
  * Reshapes a parsed backup into the form `rebuildData` reads.
  *
  * Never throws and never returns null — an unrecognisable file yields an empty
@@ -213,17 +310,22 @@ function findWaiting(source: Record<string, unknown>): unknown[] {
  * rather than silently wiping the user's calendar.
  */
 export function normalizeBackup(raw: unknown): NormalizeResult {
-  const empty: NormalizeResult['value'] = { entries: {}, waiting: [] };
+  const empty: NormalizeResult = {
+    shape: 'unknown',
+    value: { entries: {}, waiting: [] },
+    redLetterDays: [],
+    ordinaryDays: [],
+  };
 
   // A bare array of entries, each carrying its own date.
   if (Array.isArray(raw)) {
     const entries = collectFromEntryArray(raw);
-    return entries === null
-      ? { shape: 'unknown', value: empty }
-      : { shape: 'entry-array', value: { entries, waiting: [] } };
+    return entries === null ? empty : withFlags('entry-array', entries, [], new Set());
   }
 
-  if (!isPlainObject(raw)) return { shape: 'unknown', value: empty };
+  if (!isPlainObject(raw)) return empty;
+
+  const flagged = collectFlaggedDays(raw);
 
   // Unwrap one level of { data: ... } / { state: ... } and try again.
   for (const key of WRAPPER_KEYS) {
@@ -231,45 +333,57 @@ export function normalizeBackup(raw: unknown): NormalizeResult {
     if (isPlainObject(inner) || Array.isArray(inner)) {
       const unwrapped = normalizeBackup(inner);
       if (Object.keys(unwrapped.value.entries).length > 0) {
-        // Waiting items may sit outside the wrapper.
+        // Waiting items and flags may sit outside the wrapper.
         const waiting =
           unwrapped.value.waiting.length > 0 ? unwrapped.value.waiting : findWaiting(raw);
-        return { shape: 'wrapped', value: { entries: unwrapped.value.entries, waiting } };
+        const merged = new Set([...flagged, ...unwrapped.redLetterDays]);
+        return withFlags('wrapped', unwrapped.value.entries, waiting, merged);
       }
     }
   }
 
   const waiting = findWaiting(raw);
 
-  // A named container: { entries: ... }, { days: ... }, { events: [...] }.
+  // A named container: { entries: ... }, { items: ... }, { events: [...] }.
   for (const key of ENTRY_CONTAINER_KEYS) {
     const container = raw[key];
 
     if (Array.isArray(container)) {
       const entries = collectFromEntryArray(container);
       if (entries !== null) {
-        return { shape: key === 'entries' ? 'red-letter' : 'entry-array', value: { entries, waiting } };
+        return withFlags(key === 'entries' ? 'red-letter' : 'entry-array', entries, waiting, flagged);
       }
     }
     if (isPlainObject(container)) {
       const entries = collectFromKeyedDays(container);
       if (entries !== null) {
-        return {
-          shape: key === 'entries' ? 'red-letter' : 'keyed-days',
-          value: { entries, waiting },
-        };
+        return withFlags(key === 'entries' ? 'red-letter' : 'keyed-days', entries, waiting, flagged);
       }
     }
   }
 
   // Date keys sitting at the top level with no wrapper at all.
   const topLevel = collectFromKeyedDays(raw);
-  if (topLevel !== null) return { shape: 'keyed-days', value: { entries: topLevel, waiting } };
+  if (topLevel !== null) return withFlags('keyed-days', topLevel, waiting, flagged);
 
   // Nothing recognisable, but waiting items alone are still worth keeping.
   return waiting.length > 0
-    ? { shape: 'red-letter', value: { entries: {}, waiting } }
-    : { shape: 'unknown', value: empty };
+    ? { shape: 'red-letter', value: { entries: {}, waiting }, redLetterDays: [], ordinaryDays: [] }
+    : empty;
+}
+
+/**
+ * Narrows a normalised result to the days the source file actually flagged.
+ *
+ * Offered to the user rather than applied automatically: dropping days is a
+ * decision about their data, not a detail of the file format.
+ */
+export function filterToRedLetter(result: NormalizeResult): NormalizeResult['value'] {
+  const entries: Record<string, unknown> = {};
+  for (const date of result.redLetterDays) {
+    if (result.value.entries[date] !== undefined) entries[date] = result.value.entries[date];
+  }
+  return { entries, waiting: result.value.waiting };
 }
 
 /** Days present in a normalised result, for reporting to the user. */

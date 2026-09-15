@@ -4,7 +4,7 @@ import * as Sharing from 'expo-sharing';
 import { todayKey } from '../core/dates';
 import { parseIcs, type IcsImportResult } from '../core/ics';
 import { exportIcs, countExportableEvents } from '../core/icsExport';
-import { normalizeBackup } from '../core/interop';
+import { filterToRedLetter, normalizeBackup } from '../core/interop';
 import { LIMITS, SCHEMA_VERSION, type RedLetterData } from '../core/model';
 import { rebuildData, type RestoreReport } from '../core/validate';
 
@@ -21,12 +21,31 @@ import { rebuildData, type RestoreReport } from '../core/validate';
 
 const EXPORT_DIRECTORY = 'exports';
 
+/**
+ * The backup file.
+ *
+ * It carries the same calendar twice, on purpose.
+ *
+ * `entries` and `waiting` are this app's own shape. `items` and `flags` are the
+ * shape the HTML version reads — its restore refuses any file without an
+ * `items` object, so a backup written only in this app's shape would simply not
+ * open there. Writing both makes the backup work in either direction, at the
+ * cost of a file roughly twice the size, which for a calendar of exceptional
+ * days is still a few kilobytes.
+ *
+ * `flags` marks every day this app holds, because in this app an entry existing
+ * *is* the day being marked — there is no unflagged day to distinguish.
+ */
 export interface BackupFile {
   format: 'red-letter';
   schemaVersion: number;
   exportedAt: string;
   entries: RedLetterData['entries'];
   waiting: RedLetterData['waiting'];
+  /** Compatibility with the HTML version's restore. */
+  items: Record<string, { id: string; title: string; time: string; mark: boolean }[]>;
+  /** Compatibility with the HTML version: every day here is a Red Letter day. */
+  flags: Record<string, true>;
 }
 
 function exportDirectory(): Directory {
@@ -44,12 +63,30 @@ export function clearExports(): void {
 export async function exportBackup(data: RedLetterData): Promise<boolean> {
   if (!(await Sharing.isAvailableAsync())) return false;
 
+  const items: BackupFile['items'] = {};
+  const flags: BackupFile['flags'] = {};
+  for (const [date, dayEntries] of Object.entries(data.entries)) {
+    if (dayEntries.length === 0) continue;
+    // The HTML version's cleaner keeps only id, title, time and mark, and drops
+    // anything else — notes included. Nothing is lost here that it would have
+    // kept, and `entries` above still carries the full record for this app.
+    items[date] = dayEntries.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      time: entry.time ?? '',
+      mark: true,
+    }));
+    flags[date] = true;
+  }
+
   const payload: BackupFile = {
     format: 'red-letter',
     schemaVersion: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     entries: data.entries,
     waiting: data.waiting,
+    items,
+    flags,
   };
 
   // Previous exports are cleared first so the share sheet cannot offer a stale
@@ -103,7 +140,13 @@ export async function exportCalendarFile(data: RedLetterData): Promise<boolean> 
 }
 
 export type RestoreOutcome =
-  | { ok: true; data: RedLetterData; report: RestoreReport }
+  | {
+      ok: true;
+      data: RedLetterData;
+      report: RestoreReport;
+      /** Set when the file distinguished Red Letter days from ordinary ones. */
+      split?: { redLetter: RedLetterData; redLetterDays: number; ordinaryDays: number };
+    }
   | { ok: false; reason: 'cancelled' | 'too-large' | 'unreadable' | 'not-a-backup' };
 
 /**
@@ -147,12 +190,31 @@ export async function pickAndReadBackup(): Promise<RestoreOutcome> {
   // Reshaped before it is rebuilt, so a backup written by the web version —
   // whose field names this app does not control — still opens here. The
   // normaliser only moves values; rebuildData still sanitises every one.
-  const { data, report } = rebuildData(normalizeBackup(raw).value, todayKey());
+  const normalized = normalizeBackup(raw);
+  const { data, report } = rebuildData(normalized.value, todayKey());
 
   // A file that produced nothing at all is more likely the wrong file than an
   // empty calendar, and saying so is more useful than silently wiping theirs.
   if (report.entriesKept === 0 && report.waitingKept === 0) {
     return { ok: false, reason: 'not-a-backup' };
+  }
+
+  // The HTML version separates Red Letter days from days that merely have
+  // something on them. This app has no such split, so rather than silently
+  // promote every dentist appointment to a red day — which would bury the year
+  // view — the caller is given both readings and asks the user.
+  if (normalized.ordinaryDays.length > 0 && normalized.redLetterDays.length > 0) {
+    const redOnly = rebuildData(filterToRedLetter(normalized), todayKey());
+    return {
+      ok: true,
+      data,
+      report,
+      split: {
+        redLetter: redOnly.data,
+        redLetterDays: normalized.redLetterDays.length,
+        ordinaryDays: normalized.ordinaryDays.length,
+      },
+    };
   }
 
   return { ok: true, data, report };
