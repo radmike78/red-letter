@@ -71,9 +71,31 @@ export function toLocalDate(key: DateKey, time?: TimeKey): Date {
   return new Date(year, month - 1, day, hours, minutes, 0, 0);
 }
 
-/** 0 = Sunday .. 6 = Saturday. */
+/** 0 = Sunday .. 6 = Saturday, as the platform reports it. */
 export function weekdayOf(key: DateKey): number {
   return toLocalDate(key).getDay();
+}
+
+/**
+ * 0 = Monday .. 6 = Sunday.
+ *
+ * Red Letter's weeks start on Monday, matching the web version. A week that
+ * starts on Monday puts the weekend together at the end where it belongs,
+ * which is how the calendar reads to the person using it.
+ */
+export function mondayIndex(key: DateKey): number {
+  return (toLocalDate(key).getDay() + 6) % 7;
+}
+
+/** The Monday of the week containing `key`. */
+export function startOfWeek(key: DateKey): DateKey {
+  return addDays(key, -mondayIndex(key));
+}
+
+/** The seven days of the week containing `key`, Monday first. */
+export function weekOf(key: DateKey): DateKey[] {
+  const monday = startOfWeek(key);
+  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
 }
 
 export function addDays(key: DateKey, delta: number): DateKey {
@@ -112,7 +134,11 @@ export const MONTH_ABBR = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ] as const;
 
-export const WEEKDAY_ABBR = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
+/** Single letters for the year grid, Monday first. */
+export const WEEKDAY_ABBR = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
+
+/** Three letters for the month and week headers, Monday first. */
+export const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
 export function monthName(month: number): string {
   return MONTH_NAMES[month - 1] ?? '';
@@ -121,7 +147,9 @@ export function monthName(month: number): string {
 /** "Saturday, 3 May" — the long form used on the day screen. */
 export function formatLongDate(key: DateKey): string {
   const d = toLocalDate(key);
-  const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()];
+  const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][
+    d.getDay()
+  ];
   const { day, month } = parseDateKey(key);
   return `${weekday}, ${day} ${monthName(month)}`;
 }
@@ -152,10 +180,10 @@ export function describeDistance(from: DateKey, to: DateKey): string {
   return `In ${Math.round(delta / 30)} months`;
 }
 
-/** Weeks of a month as `DateKey | null` grids, Sunday-first, for the month view. */
+/** Weeks of a month as `DateKey | null` grids, Monday-first, for the month view. */
 export function monthGrid(year: number, month: number): (DateKey | null)[][] {
   const total = daysInMonth(year, month);
-  const firstWeekday = new Date(year, month - 1, 1).getDay();
+  const firstWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7;
   const cells: (DateKey | null)[] = Array(firstWeekday).fill(null);
   for (let day = 1; day <= total; day += 1) cells.push(makeDateKey(year, month, day));
   while (cells.length % 7 !== 0) cells.push(null);

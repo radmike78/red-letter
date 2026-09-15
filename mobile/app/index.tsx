@@ -1,84 +1,183 @@
-import { Link, useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Link } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   MONTH_ABBR,
-  daysInMonth,
-  describeDistance,
-  formatLongDate,
+  MONTH_NAMES,
+  addDays,
   makeDateKey,
   parseDateKey,
+  startOfWeek,
+  type DateKey,
 } from '../src/core/dates';
-import { markedDaysInYear, nextMarkedDay, sortDayEntries } from '../src/core/queries';
 import { useStore } from '../src/storage/repository';
+import { Triage } from '../src/ui/Triage';
+import { DayView } from '../src/ui/views/DayView';
+import { MonthView } from '../src/ui/views/MonthView';
+import { WeekView } from '../src/ui/views/WeekView';
+import { YearView } from '../src/ui/views/YearView';
 import { space, type, useTheme } from '../src/ui/theme';
 
+/** Which of the four calendar scales the home screen is showing. */
+type Scale = 'year' | 'month' | 'week' | 'day';
+
+const TABS: { id: Scale; label: string }[] = [
+  { id: 'year', label: 'Year' },
+  { id: 'month', label: 'Month' },
+  { id: 'week', label: 'Week' },
+  { id: 'day', label: 'Day' },
+];
+
 /**
- * The year, all of it, mostly empty.
+ * The home screen, laid out like the web version.
  *
- * Every other planner opens on today. Red Letter opens on the year with twelve
- * months laid out at once and only the marked days inked in, because the empty
- * space is the argument: you can see at a glance that most of your year is
- * unclaimed. Defaulting the zoom outward is the thesis, not a view option.
+ * Masthead, a stepper for whatever period is showing, four tabs, then the
+ * triage bar and the view itself. One cursor drives all four: stepping a month
+ * and then switching to Week shows the week you were already looking at, rather
+ * than throwing you back to today.
+ *
+ * It opens on Year. Every other planner opens on today; opening on the year,
+ * with most of it deliberately empty, is the argument the product is making.
  */
-export default function YearScreen(): React.JSX.Element {
+export default function HomeScreen(): React.JSX.Element {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const { data, today, ready, loadError } = useStore();
+  const { data, today, loadError } = useStore();
 
-  const [year, setYear] = useState(() => parseDateKey(today).year);
+  const [view, setView] = useState<Scale>('year');
+  const [cursor, setCursor] = useState<DateKey>(today);
 
-  const marked = useMemo(() => markedDaysInYear(data, year), [data, year]);
-  const next = useMemo(() => nextMarkedDay(data, today), [data, today]);
-  const thisYear = parseDateKey(today).year;
+  const { year, month } = parseDateKey(cursor);
 
-  // Two columns of months on a phone, three once there is room for them.
-  const columns = width >= 700 ? 3 : 2;
-  const gutter = space.md;
-  const columnWidth = (width - gutter * 2 - gutter * (columns - 1)) / columns;
+  /** The label between the two arrows, in the units the current view steps in. */
+  const period = useMemo(() => {
+    if (view === 'year') return String(year);
+    if (view === 'month') return `${MONTH_ABBR[month - 1]} ${year}`;
+    if (view === 'week') {
+      const monday = startOfWeek(cursor);
+      const sunday = addDays(monday, 6);
+      const a = parseDateKey(monday);
+      const b = parseDateKey(sunday);
+      return `${a.day} ${MONTH_ABBR[a.month - 1]} – ${b.day} ${MONTH_ABBR[b.month - 1]}`;
+    }
+    const d = parseDateKey(cursor);
+    return `${d.day} ${MONTH_ABBR[d.month - 1]}`;
+  }, [view, year, month, cursor]);
+
+  const step = useCallback(
+    (direction: 1 | -1) => {
+      setCursor((current) => {
+        const { year: y, month: m, day } = parseDateKey(current);
+        if (view === 'year') {
+          // Clamp the day so stepping off 29 February does not land nowhere.
+          const safeDay = Math.min(day, new Date(y + direction, m, 0).getDate());
+          return makeDateKey(y + direction, m, safeDay);
+        }
+        if (view === 'month') {
+          const targetMonth = m + direction;
+          const targetYear = y + Math.floor((targetMonth - 1) / 12);
+          const normalized = ((targetMonth - 1 + 12) % 12) + 1;
+          const safeDay = Math.min(day, new Date(targetYear, normalized, 0).getDate());
+          return makeDateKey(targetYear, normalized, safeDay);
+        }
+        return addDays(current, direction * (view === 'week' ? 7 : 1));
+      });
+    },
+    [view],
+  );
+
+  /** Tapping a day anywhere jumps to it and opens the Day tab. */
+  const openDay = useCallback((date: DateKey) => {
+    setCursor(date);
+    setView('day');
+  }, []);
+
+  const openMonth = useCallback(
+    (targetMonth: number) => {
+      setCursor(makeDateKey(year, targetMonth, 1));
+      setView('month');
+    },
+    [year],
+  );
 
   return (
     <ScrollView
-      style={{ backgroundColor: theme.paper }}
+      style={{ backgroundColor: theme.ground }}
       contentContainerStyle={{
         paddingTop: insets.top + space.md,
         paddingBottom: insets.bottom + space.xxl,
-        paddingHorizontal: gutter,
+        paddingHorizontal: space.md,
       }}
+      keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.headerRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Previous year, ${year - 1}`}
-          hitSlop={space.md}
-          onPress={() => setYear((y) => y - 1)}
-        >
-          <Text style={[type.title, { color: theme.inkFaint }]}>‹</Text>
-        </Pressable>
+      <View style={styles.masthead}>
+        <View style={styles.mastheadText}>
+          <Text style={[type.mark, { color: theme.red }]}>Red Letter</Text>
+          <Text style={[type.small, styles.tagline, { color: theme.inkMuted }]}>
+            Not every day needs a plan. This shows you the ones that do.
+          </Text>
+        </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Year ${year}. Tap to return to ${thisYear}.`}
-          onPress={() => setYear(thisYear)}
-        >
-          <Text style={[type.display, { color: theme.ink }]}>{year}</Text>
-        </Pressable>
+        <View style={styles.stepper}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Previous"
+            hitSlop={space.sm}
+            onPress={() => step(-1)}
+            style={({ pressed }) => [
+              styles.nav,
+              { borderColor: theme.line, backgroundColor: theme.surface, opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={[type.body, { color: theme.ink }]}>‹</Text>
+          </Pressable>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Next year, ${year + 1}`}
-          hitSlop={space.md}
-          onPress={() => setYear((y) => y + 1)}
-        >
-          <Text style={[type.title, { color: theme.inkFaint }]}>›</Text>
-        </Pressable>
+          <Text style={[type.period, styles.period, { color: theme.ink }]} numberOfLines={1}>
+            {period}
+          </Text>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Next"
+            hitSlop={space.sm}
+            onPress={() => step(1)}
+            style={({ pressed }) => [
+              styles.nav,
+              { borderColor: theme.line, backgroundColor: theme.surface, opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Text style={[type.body, { color: theme.ink }]}>›</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={[styles.tabs, { borderBottomColor: theme.line }]}>
+        {TABS.map((tab) => {
+          const selected = tab.id === view;
+          return (
+            <Pressable
+              key={tab.id}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              onPress={() => setView(tab.id)}
+              style={[
+                styles.tab,
+                { borderBottomColor: selected ? theme.ink : 'transparent' },
+              ]}
+            >
+              <Text style={[type.body, { color: selected ? theme.ink : theme.inkMuted }]}>
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       {loadError ? (
-        <View style={[styles.banner, { backgroundColor: theme.redSoft, borderColor: theme.red }]}>
+        <View
+          style={[styles.banner, { backgroundColor: theme.redSoft, borderLeftColor: theme.red }]}
+        >
           <Text style={[type.small, { color: theme.ink }]}>{loadError}</Text>
           <Text style={[type.small, styles.bannerHint, { color: theme.inkMuted }]}>
             Restore a backup from Settings to start again.
@@ -86,21 +185,38 @@ export default function YearScreen(): React.JSX.Element {
         </View>
       ) : null}
 
-      <NextDay next={next} today={today} ready={ready} />
+      <View style={styles.triage}>
+        <Triage data={data} today={today} onPickDay={openDay} />
+      </View>
 
-      <View style={[styles.grid, { gap: gutter }]}>
-        {MONTH_ABBR.map((label, index) => (
-          <MiniMonth
-            key={label}
-            year={year}
-            month={index + 1}
-            label={label}
-            marked={marked}
-            today={today}
-            width={columnWidth}
-            onPress={() => router.push(`/month/${year}-${String(index + 1).padStart(2, '0')}`)}
-          />
-        ))}
+      {view === 'year' ? (
+        <YearView
+          data={data}
+          year={year}
+          today={today}
+          onPickDay={openDay}
+          onPickMonth={openMonth}
+        />
+      ) : null}
+
+      {view === 'month' ? (
+        <MonthView data={data} year={year} month={month} today={today} onPickDay={openDay} />
+      ) : null}
+
+      {view === 'week' ? (
+        <WeekView data={data} anchor={cursor} today={today} onPickDay={openDay} />
+      ) : null}
+
+      {view === 'day' ? <DayView date={cursor} onGo={setCursor} /> : null}
+
+      <View style={[styles.section, { borderTopColor: theme.line }]}>
+        <Text style={[type.serifHeading, { color: theme.ink }]}>
+          What makes a <Text style={{ color: theme.red }}>Red Letter</Text> day
+        </Text>
+        <Text style={[type.small, styles.note, { color: theme.inkMuted }]}>
+          Don’t want to forget something coming up? Mark it as a Red Letter day so it stands out.
+          Export to your Google or Apple calendar and get notified there too.
+        </Text>
       </View>
 
       <View style={styles.footer}>
@@ -115,171 +231,54 @@ export default function YearScreen(): React.JSX.Element {
           </Pressable>
         </Link>
       </View>
+
+      <Text style={[type.small, styles.colophon, { color: theme.inkMuted }]}>
+        Medieval scribes copied their calendars in plain black and saved the red ink for feast days,
+        the ones that asked something of you. Everything else stayed unmarked. That practice is
+        where the phrase <Text style={{ color: theme.red }}>red-letter day</Text> comes from.
+      </Text>
     </ScrollView>
   );
 }
 
-function NextDay({
-  next,
-  today,
-  ready,
-}: {
-  next: ReturnType<typeof nextMarkedDay>;
-  today: string;
-  ready: boolean;
-}): React.JSX.Element {
-  const theme = useTheme();
-
-  if (!ready) return <View style={styles.nextBlock} />;
-
-  if (next === null) {
-    return (
-      <View style={styles.nextBlock}>
-        <Text style={[type.body, { color: theme.inkMuted }]}>Nothing ahead.</Text>
-      </View>
-    );
-  }
-
-  const first = sortDayEntries(next.entries)[0];
-
-  return (
-    <Link href={`/day/${next.date}`} asChild>
-      <Pressable accessibilityRole="button" style={styles.nextBlock}>
-        <Text style={[type.caption, { color: theme.red }]}>
-          {describeDistance(today, next.date).toUpperCase()}
-        </Text>
-        <Text style={[type.title, styles.nextTitle, { color: theme.ink }]} numberOfLines={2}>
-          {first?.title ?? ''}
-        </Text>
-        <Text style={[type.small, { color: theme.inkMuted }]}>
-          {formatLongDate(next.date)}
-          {next.entries.length > 1 ? ` · ${next.entries.length} things` : ''}
-        </Text>
-      </Pressable>
-    </Link>
-  );
-}
-
-function MiniMonth({
-  year,
-  month,
-  label,
-  marked,
-  today,
-  width,
-  onPress,
-}: {
-  year: number;
-  month: number;
-  label: string;
-  marked: Set<string>;
-  today: string;
-  width: number;
-  onPress: () => void;
-}): React.JSX.Element {
-  const theme = useTheme();
-  const total = daysInMonth(year, month);
-  const leading = new Date(year, month - 1, 1).getDay();
-
-  // Seven columns, sized from the available width so the numbers stay on a grid.
-  const cell = Math.floor((width - space.sm * 2) / 7);
-
-  // The numeral has to fit a cell roughly 24pt wide at phone width, so it is
-  // sized from the cell rather than taken from the type scale. Floored so a
-  // narrow device does not drop below legibility, capped so a tablet does not
-  // turn the year into a wall of large digits.
-  const numeral = Math.max(9, Math.min(13, Math.round(cell * 0.46)));
-  const cells: (string | null)[] = [
-    ...Array<null>(leading).fill(null),
-    ...Array.from({ length: total }, (_, i) => makeDateKey(year, month, i + 1)),
-  ];
-
-  const count = cells.filter((date) => date !== null && marked.has(date)).length;
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${label} ${year}, ${count === 0 ? 'nothing marked' : `${count} marked`}`}
-      onPress={onPress}
-      style={({ pressed }) => [{ width, opacity: pressed ? 0.6 : 1 }]}
-    >
-      <View style={styles.monthHeader}>
-        <Text style={[type.caption, { color: theme.inkMuted }]}>{label.toUpperCase()}</Text>
-        {count > 0 ? <View style={[styles.countDot, { backgroundColor: theme.red }]} /> : null}
-      </View>
-
-      <View style={styles.monthGrid}>
-        {cells.map((date, index) => {
-          if (date === null) {
-            return <View key={`blank-${index}`} style={{ width: cell, height: cell }} />;
-          }
-          const isMarked = marked.has(date);
-          const isToday = date === today;
-
-          return (
-            <View key={date} style={[styles.dayCell, { width: cell, height: cell }]}>
-              <View
-                style={[
-                  styles.dayRing,
-                  {
-                    width: cell - 2,
-                    height: cell - 2,
-                    borderRadius: (cell - 2) / 2,
-                    borderColor: isToday ? theme.ink : 'transparent',
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.dayNumber,
-                    {
-                      fontSize: numeral,
-                      // Unmarked days stay faint on purpose. They are readable
-                      // when looked for and invisible when scanned, which is
-                      // what lets the red ones carry the whole screen.
-                      color: isMarked ? theme.red : theme.inkFaint,
-                      fontWeight: isMarked ? '700' : '400',
-                    },
-                  ]}
-                >
-                  {parseDateKey(date).day}
-                </Text>
-              </View>
-            </View>
-          );
-        })}
-      </View>
-    </Pressable>
-  );
+/** Kept so a deep link can name a month; the home screen owns navigation now. */
+export function monthLabel(month: number): string {
+  return MONTH_NAMES[month - 1] ?? '';
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
+  masthead: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: space.md,
+    flexWrap: 'wrap',
+  },
+  mastheadText: { flexShrink: 1, minWidth: 180 },
+  tagline: { marginTop: 2 },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  nav: {
+    width: 30,
+    height: 30,
+    borderRadius: 2,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: space.sm,
+    justifyContent: 'center',
   },
-  banner: {
-    marginTop: space.md,
-    padding: space.md,
-    borderRadius: 12,
-    borderLeftWidth: 3,
-  },
-  bannerHint: { marginTop: space.xs },
-  nextBlock: { minHeight: 84, marginTop: space.lg, marginBottom: space.lg, paddingHorizontal: space.sm },
-  nextTitle: { marginTop: space.xs, marginBottom: space.xs },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  monthHeader: { flexDirection: 'row', alignItems: 'center', gap: space.xs, marginBottom: space.sm },
-  countDot: { width: 4, height: 4, borderRadius: 2 },
-  monthGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { alignItems: 'center', justifyContent: 'center' },
-  dayRing: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  dayNumber: { textAlign: 'center', fontVariant: ['tabular-nums'] },
-  footer: {
+  period: { minWidth: 96, textAlign: 'center' },
+  tabs: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: space.xl,
-    paddingHorizontal: space.sm,
+    gap: 2,
+    marginTop: space.lg - 2,
+    marginBottom: space.md + 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  tab: { paddingVertical: space.sm, paddingHorizontal: space.md - 2, borderBottomWidth: 2 },
+  banner: { padding: space.md, borderLeftWidth: 3, marginBottom: space.md },
+  bannerHint: { marginTop: space.xs },
+  triage: { marginBottom: space.lg - 2 },
+  section: { marginTop: space.xl - 6, paddingTop: space.md + 2, borderTopWidth: StyleSheet.hairlineWidth },
+  note: { marginTop: space.xs + 2, lineHeight: 21 },
+  footer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: space.lg },
+  colophon: { marginTop: space.lg, lineHeight: 22 },
 });

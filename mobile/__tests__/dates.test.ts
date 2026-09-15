@@ -1,5 +1,8 @@
 import {
   addDays,
+  mondayIndex,
+  startOfWeek,
+  weekOf,
   daysBetween,
   daysInMonth,
   describeDistance,
@@ -127,10 +130,17 @@ describe('monthGrid', () => {
     for (const week of grid) expect(week).toHaveLength(7);
   });
 
-  it('pads a February that starts on a Sunday with no leading blanks', () => {
-    // 2026-02-01 is a Sunday.
+  it('starts weeks on Monday, matching the web version', () => {
+    // 2026-02-01 is a Sunday, so it sits in the LAST column of the first row
+    // and the six cells before it are blank.
     const grid = monthGrid(2026, 2);
-    expect(grid[0]![0]).toBe('2026-02-01');
+    expect(grid[0]!.slice(0, 6).every((d) => d === null)).toBe(true);
+    expect(grid[0]![6]).toBe('2026-02-01');
+  });
+
+  it('puts a Monday first with no leading blanks', () => {
+    // 2026-06-01 is a Monday.
+    expect(monthGrid(2026, 6)[0]![0]).toBe('2026-06-01');
   });
 
   it('includes the leap day in a leap year', () => {
@@ -143,5 +153,37 @@ describe('todayKey', () => {
   it('reads the local date, not a UTC one', () => {
     const fixed = new Date(2026, 0, 1, 23, 30);
     expect(todayKey(fixed)).toBe('2026-01-01');
+  });
+});
+
+describe('Monday-first week helpers', () => {
+  it('indexes Monday as 0 and Sunday as 6', () => {
+    expect(mondayIndex('2026-03-16')).toBe(0); // Monday
+    expect(mondayIndex('2026-03-20')).toBe(4); // Friday
+    expect(mondayIndex('2026-03-22')).toBe(6); // Sunday
+  });
+
+  it('finds the Monday of a week', () => {
+    expect(startOfWeek('2026-03-18')).toBe('2026-03-16');
+    expect(startOfWeek('2026-03-16')).toBe('2026-03-16');
+    // Sunday belongs to the week that began the previous Monday.
+    expect(startOfWeek('2026-03-22')).toBe('2026-03-16');
+  });
+
+  it('returns seven consecutive days, Monday to Sunday', () => {
+    expect(weekOf('2026-03-18')).toEqual([
+      '2026-03-16',
+      '2026-03-17',
+      '2026-03-18',
+      '2026-03-19',
+      '2026-03-20',
+      '2026-03-21',
+      '2026-03-22',
+    ]);
+  });
+
+  it('crosses a month boundary within one week', () => {
+    // 1 April 2026 is a Wednesday, so its week starts in March.
+    expect(weekOf('2026-04-01')[0]).toBe('2026-03-30');
   });
 });

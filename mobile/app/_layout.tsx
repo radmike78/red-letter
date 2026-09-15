@@ -18,15 +18,14 @@ export default function RootLayout(): React.JSX.Element {
           <StatusBar style={theme.dark ? 'light' : 'dark'} />
           <Stack
             screenOptions={{
-              headerStyle: { backgroundColor: theme.paper },
+              headerStyle: { backgroundColor: theme.ground },
               headerTintColor: theme.ink,
               headerTitleStyle: { fontSize: 17, fontWeight: '600' },
               headerShadowVisible: false,
-              contentStyle: { backgroundColor: theme.paper },
+              contentStyle: { backgroundColor: theme.ground },
             }}
           >
             <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="month/[month]" options={{ title: '' }} />
             <Stack.Screen name="day/[date]" options={{ title: '' }} />
             <Stack.Screen name="waiting" options={{ title: 'Waiting on' }} />
             <Stack.Screen name="settings" options={{ title: 'Settings' }} />

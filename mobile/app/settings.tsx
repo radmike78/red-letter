@@ -235,7 +235,7 @@ export default function SettingsScreen(): React.JSX.Element {
 
   return (
     <ScrollView
-      style={{ backgroundColor: theme.paper }}
+      style={{ backgroundColor: theme.ground }}
       contentContainerStyle={{
         paddingHorizontal: space.md,
         paddingBottom: insets.bottom + space.xxl,
@@ -332,7 +332,7 @@ function Section({
           {title.toUpperCase()}
         </Text>
       ) : null}
-      <View style={[styles.sectionBody, { borderTopColor: theme.rule }]}>{children}</View>
+      <View style={[styles.sectionBody, { borderTopColor: theme.line }]}>{children}</View>
     </View>
   );
 }

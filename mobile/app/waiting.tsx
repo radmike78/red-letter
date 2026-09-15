@@ -55,7 +55,7 @@ export default function WaitingScreen(): React.JSX.Element {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: theme.paper }}
+      style={{ flex: 1, backgroundColor: theme.ground }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={insets.top + 44}
     >
@@ -80,7 +80,7 @@ export default function WaitingScreen(): React.JSX.Element {
             returnKeyType="done"
             onSubmitEditing={submit}
             accessibilityLabel="What are you waiting on"
-            style={[styles.input, type.body, { color: theme.ink, borderBottomColor: theme.rule }]}
+            style={[styles.input, type.body, { color: theme.ink, borderBottomColor: theme.line }]}
           />
           <Pressable
             accessibilityRole="button"
@@ -88,7 +88,7 @@ export default function WaitingScreen(): React.JSX.Element {
             onPress={submit}
             style={({ pressed }) => [
               styles.submit,
-              { borderColor: canSubmit ? theme.ink : theme.rule, opacity: pressed ? 0.6 : 1 },
+              { borderColor: canSubmit ? theme.ink : theme.line, opacity: pressed ? 0.6 : 1 },
             ]}
           >
             <Text style={[type.small, { color: canSubmit ? theme.ink : theme.inkFaint }]}>Add</Text>
@@ -104,7 +104,7 @@ export default function WaitingScreen(): React.JSX.Element {
             const age = daysBetween(item.since, today);
 
             return (
-              <View key={item.id} style={[styles.row, { borderBottomColor: theme.rule }]}>
+              <View key={item.id} style={[styles.row, { borderBottomColor: theme.line }]}>
                 <View style={styles.rowMain}>
                   <Text style={[type.body, { color: theme.ink }]}>{item.title}</Text>
                   <Text style={[type.small, styles.age, { color: theme.inkMuted }]}>

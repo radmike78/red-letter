@@ -96,7 +96,7 @@ export function LockGate({ children }: { children: React.ReactNode }): React.JSX
 
   if (enabled === null) {
     return (
-      <View style={[styles.centre, { backgroundColor: theme.paper }]}>
+      <View style={[styles.centre, { backgroundColor: theme.ground }]}>
         <ActivityIndicator color={theme.inkFaint} />
       </View>
     );
@@ -104,7 +104,7 @@ export function LockGate({ children }: { children: React.ReactNode }): React.JSX
 
   if (!unlocked) {
     return (
-      <View style={[styles.centre, { backgroundColor: theme.paper }]}>
+      <View style={[styles.centre, { backgroundColor: theme.ground }]}>
         <Text style={[type.title, { color: theme.ink }]}>Red Letter</Text>
         <Text style={[type.small, styles.hint, { color: theme.inkMuted }]}>
           {failed ? 'Locked.' : 'Unlocking…'}
@@ -115,7 +115,7 @@ export function LockGate({ children }: { children: React.ReactNode }): React.JSX
             onPress={() => void authenticate()}
             style={({ pressed }) => [
               styles.button,
-              { borderColor: theme.rule, opacity: pressed ? 0.6 : 1 },
+              { borderColor: theme.line, opacity: pressed ? 0.6 : 1 },
             ]}
           >
             <Text style={[type.body, { color: theme.ink }]}>Try again</Text>
