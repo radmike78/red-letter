@@ -181,8 +181,14 @@ function MiniMonth({
   const total = daysInMonth(year, month);
   const leading = new Date(year, month - 1, 1).getDay();
 
-  // Seven columns, sized from the available width so the dots stay on a grid.
+  // Seven columns, sized from the available width so the numbers stay on a grid.
   const cell = Math.floor((width - space.sm * 2) / 7);
+
+  // The numeral has to fit a cell roughly 24pt wide at phone width, so it is
+  // sized from the cell rather than taken from the type scale. Floored so a
+  // narrow device does not drop below legibility, capped so a tablet does not
+  // turn the year into a wall of large digits.
+  const numeral = Math.max(9, Math.min(13, Math.round(cell * 0.46)));
   const cells: (string | null)[] = [
     ...Array<null>(leading).fill(null),
     ...Array.from({ length: total }, (_, i) => makeDateKey(year, month, i + 1)),
@@ -214,15 +220,31 @@ function MiniMonth({
             <View key={date} style={[styles.dayCell, { width: cell, height: cell }]}>
               <View
                 style={[
-                  styles.dot,
+                  styles.dayRing,
                   {
-                    backgroundColor: isMarked ? theme.red : 'transparent',
+                    width: cell - 2,
+                    height: cell - 2,
+                    borderRadius: (cell - 2) / 2,
                     borderColor: isToday ? theme.ink : 'transparent',
-                    borderWidth: isToday ? 1 : 0,
                   },
-                  !isMarked && !isToday ? { backgroundColor: theme.rule } : null,
                 ]}
-              />
+              >
+                <Text
+                  style={[
+                    styles.dayNumber,
+                    {
+                      fontSize: numeral,
+                      // Unmarked days stay faint on purpose. They are readable
+                      // when looked for and invisible when scanned, which is
+                      // what lets the red ones carry the whole screen.
+                      color: isMarked ? theme.red : theme.inkFaint,
+                      fontWeight: isMarked ? '700' : '400',
+                    },
+                  ]}
+                >
+                  {parseDateKey(date).day}
+                </Text>
+              </View>
             </View>
           );
         })}
@@ -252,7 +274,8 @@ const styles = StyleSheet.create({
   countDot: { width: 4, height: 4, borderRadius: 2 },
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   dayCell: { alignItems: 'center', justifyContent: 'center' },
-  dot: { width: 5, height: 5, borderRadius: 3 },
+  dayRing: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  dayNumber: { textAlign: 'center', fontVariant: ['tabular-nums'] },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
