@@ -3,7 +3,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { totalEntryCount } from '../src/core/queries';
-import { exportBackup, pickAndReadBackup, pickAndReadIcs } from '../src/features/backup';
+import { countExportableEvents } from '../src/core/icsExport';
+import {
+  exportBackup,
+  exportCalendarFile,
+  pickAndReadBackup,
+  pickAndReadIcs,
+} from '../src/features/backup';
 import { disableReminders, enableReminders, syncReminders } from '../src/features/notifications';
 import { areRemindersEnabled, isLockEnabled, setLockEnabled } from '../src/features/settings';
 import { clearAllPreferences } from '../src/features/settings';
@@ -72,6 +78,22 @@ export default function SettingsScreen(): React.JSX.Element {
       if (!shared) Alert.alert('Cannot share', 'Sharing is not available on this device.');
     } catch {
       Alert.alert('Export failed', 'The backup could not be written.');
+    } finally {
+      setBusy(false);
+    }
+  }, [data]);
+
+  const onExportIcs = useCallback(async () => {
+    if (countExportableEvents(data) === 0) {
+      Alert.alert('Nothing to export', 'Mark a day first.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const shared = await exportCalendarFile(data);
+      if (!shared) Alert.alert('Cannot share', 'Sharing is not available on this device.');
+    } catch {
+      Alert.alert('Export failed', 'The calendar file could not be written.');
     } finally {
       setBusy(false);
     }
@@ -230,6 +252,12 @@ export default function SettingsScreen(): React.JSX.Element {
           label="Import a calendar file"
           hint="Reads .ics files. Repeating events are added once, not expanded."
           onPress={onImportIcs}
+          busy={busy}
+        />
+        <Action
+          label="Export a calendar file"
+          hint="An .ics file your other calendars — and the Red Letter web version — can read."
+          onPress={onExportIcs}
           busy={busy}
         />
 

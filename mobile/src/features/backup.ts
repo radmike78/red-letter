@@ -3,6 +3,8 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { todayKey } from '../core/dates';
 import { parseIcs, type IcsImportResult } from '../core/ics';
+import { exportIcs, countExportableEvents } from '../core/icsExport';
+import { normalizeBackup } from '../core/interop';
 import { LIMITS, SCHEMA_VERSION, type RedLetterData } from '../core/model';
 import { rebuildData, type RestoreReport } from '../core/validate';
 
@@ -70,6 +72,36 @@ export async function exportBackup(data: RedLetterData): Promise<boolean> {
   }
 }
 
+/**
+ * Exports the calendar as .ics.
+ *
+ * This is the interoperability path rather than the backup path. The web
+ * version of Red Letter reads .ics, and so does every other calendar, so this
+ * is how a marked day leaves the app without either side needing to know about
+ * the other's format. Use the JSON backup to move the whole calendar; use this
+ * to move the days themselves somewhere else.
+ */
+export async function exportCalendarFile(data: RedLetterData): Promise<boolean> {
+  if (!(await Sharing.isAvailableAsync())) return false;
+  if (countExportableEvents(data) === 0) return false;
+
+  clearExports();
+  const file = new File(exportDirectory(), `red-letter-${todayKey()}.ics`);
+  file.create();
+  file.write(exportIcs(data));
+
+  try {
+    await Sharing.shareAsync(file.uri, {
+      mimeType: 'text/calendar',
+      dialogTitle: 'Export your marked days',
+      UTI: 'com.apple.ical.ics',
+    });
+    return true;
+  } finally {
+    clearExports();
+  }
+}
+
 export type RestoreOutcome =
   | { ok: true; data: RedLetterData; report: RestoreReport }
   | { ok: false; reason: 'cancelled' | 'too-large' | 'unreadable' | 'not-a-backup' };
@@ -112,7 +144,10 @@ export async function pickAndReadBackup(): Promise<RestoreOutcome> {
     return { ok: false, reason: 'not-a-backup' };
   }
 
-  const { data, report } = rebuildData(raw, todayKey());
+  // Reshaped before it is rebuilt, so a backup written by the web version —
+  // whose field names this app does not control — still opens here. The
+  // normaliser only moves values; rebuildData still sanitises every one.
+  const { data, report } = rebuildData(normalizeBackup(raw).value, todayKey());
 
   // A file that produced nothing at all is more likely the wrong file than an
   // empty calendar, and saying so is more useful than silently wiping theirs.
